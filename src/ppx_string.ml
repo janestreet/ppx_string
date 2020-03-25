@@ -89,37 +89,41 @@ let to_parts (s : string loc) =
   List.rev (loop [] 0)
 ;;
 
+
 let to_parts { loc; txt = s } =
   if String.equal loc.loc_start.pos_fname loc.loc_end.pos_fname
   && Caml.Sys.file_exists loc.loc_start.pos_fname
   then (
-    let s_from_file =
+    match
       Stdio.In_channel.with_file loc.loc_start.pos_fname ~f:(fun ic ->
         Stdio.In_channel.seek ic (Int64.of_int loc.loc_start.pos_cnum);
         let buf_len = loc.loc_end.pos_cnum - loc.loc_start.pos_cnum in
         let buf = Bytes.create buf_len in
         Stdio.In_channel.really_input_exn ic ~buf ~pos:0 ~len:buf_len;
         Bytes.to_string buf)
-    in
-    let from_ast = to_parts { loc; txt = s } in
-    let from_file = to_parts { loc; txt = s_from_file } in
-    (* If we have access to the original file, we extract location from it. *)
-    (* Ideally, one should check that [from_file] and [from_ast] are equal (modulo
-       encoding in strings). Note that we only check the general shapes are equal.
-       The worse that can happen here is an error message with slightly incorrect
-       locations. *)
-    List.zip_exn from_ast from_file
-    |> List.map ~f:(fun ((x, y) : Part.t * Part.t) ->
-      match x, y with
-      | String { txt; _ }, String { txt = _raw_string; loc } ->
-        Part.String { txt; loc }
-      | Expr { expr = e1; converter = c1 }, Expr { expr = e2; converter = c2 } ->
-        assert (Bool.equal (Option.is_some c1) (Option.is_some c2));
-        Part.Expr
-          { expr = { e1 with loc = e2.loc }
-          ; converter = Option.map2 c1 c2 ~f:(fun c1 c2 -> { c1 with loc = c2.loc })
-          }
-      | String _, Expr _ | Expr _, String _ -> assert false))
+    with
+    | s_from_file ->
+      let from_ast = to_parts { loc; txt = s } in
+      let from_file = to_parts { loc; txt = s_from_file } in
+      (* If we have access to the original file, we extract location from it. *)
+      (* Ideally, one should check that [from_file] and [from_ast] are equal (modulo
+         encoding in strings). Note that we only check the general shapes are equal.
+         The worse that can happen here is an error message with slightly incorrect
+         locations. *)
+      List.zip_exn from_ast from_file
+      |> List.map ~f:(fun ((x, y) : Part.t * Part.t) ->
+        match x, y with
+        | String { txt; _ }, String { txt = _raw_string; loc } ->
+          Part.String { txt; loc }
+        | Expr { expr = e1; converter = c1 }, Expr { expr = e2; converter = c2 } ->
+          assert (Bool.equal (Option.is_some c1) (Option.is_some c2));
+          Part.Expr
+            { expr = { e1 with loc = e2.loc }
+            ; converter =
+                Option.map2 c1 c2 ~f:(fun c1 c2 -> { c1 with loc = c2.loc })
+            }
+        | String _, Expr _ | Expr _, String _ -> assert false)
+    | exception _ -> to_parts { loc; txt = s })
   else to_parts { loc; txt = s }
 ;;
 
