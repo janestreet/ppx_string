@@ -1,0 +1,49 @@
+
+This extension provides a syntax for string interpolation. Here is an
+example of all the features of ppx_string:
+
+#+begin_src ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  [%string "ssh %{user}@%{host} -p %{port#Int} %{Sys.quote script}"]
+#+end_src
+
+The above expression is equivalent to:
+
+#+begin_src ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  String.concat ""
+    [ "ssh "
+    ; user
+    ; "@"
+    ; host
+    ; " -p "
+    ; Int.to_string port
+    ; " "
+    ; Sys.quote script
+    ]
+#+end_src
+
+Compared to `Printf.sprintf`:
+
+#+begin_src ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  sprintf "ssh %s@%s -p %d %s" user host port (Sys.quote script)
+#+end_src
+
+having the values inline instead of after the format string can make
+it easier to understand the resulting string, and avoids the potential
+mistake of passing arguments in the wrong order. This is truer the
+more format arguments there are. On the other hand, some things are
+much easier with printf: pad numbers with zero or spaces, pad strings
+with spaces, display floats in a specific formats, etc.
+
+Compared to manually writing something like `String.concat` version
+above, ppx_string is shorter and can oftentimes be less error-prone
+(it's really easy to forget whitespace after `ssh` or around `-p` in
+the explicit `String.concat` version).
+
+To include a literal =%=, say
+
+#+begin_src ocaml
+[%string {|%{"%"}|}]
+#+end_src
