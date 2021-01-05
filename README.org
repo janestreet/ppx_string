@@ -1,6 +1,3 @@
-#+title: =ppx_string=
-#+parent:../README.md
-#+UUID: cc1e7118-25f8-33ba-636b-57094a9c8be7
 
 This extension provides a syntax for string interpolation. Here is an
 example of all the features of ppx_string:
