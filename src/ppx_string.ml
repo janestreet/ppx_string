@@ -201,8 +201,8 @@ let () =
           "ppx_string.string"
           Extension.Context.expression
           Ast_pattern.(
-            pstr (pstr_eval (pexp_constant (pconst_string __' __)) nil ^:: nil))
-          (fun ~loc:expr_loc ~path:_ { loc = string_loc; txt = string } delimiter ->
+            pstr (pstr_eval (pexp_constant (pconst_string __' __ __)) nil ^:: nil))
+          (fun ~loc:expr_loc ~path:_ { loc = string_loc; txt = string } _ delimiter ->
              Merlin_helpers.hide_expression
                (expand ~expr_loc ~string_loc ~string ~delimiter))
       ]
