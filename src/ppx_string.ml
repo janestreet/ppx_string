@@ -120,27 +120,69 @@ let parse_ident ~where ~loc ~name module_path =
   | _ -> parse_error ~loc ~name module_path
 ;;
 
+let parse_body ~where string =
+  let loc = Where.skip_with_loc where string in
+  parse_expression ~where ~loc ~name:"#{...} expression" string
+;;
+
+let parse_module_path ~where string =
+  let loc = Where.skip_with_loc where string in
+  parse_ident ~where ~loc ~name:"%{...} module path" string
+;;
+
+let parse_pad_length ~where string =
+  let loc = Where.skip_with_loc where string in
+  parse_expression ~where ~loc ~name:"#{...} pad length" string
+;;
+
 let add_interpreted string ~where ~start ~until ~acc =
   Where.skip where "%{";
   let loc_start = Where.loc_start where in
   let expression =
     let string = String.sub string ~pos:start ~len:(until - start) in
-    match String.rsplit2 string ~on:'#' with
-    | None ->
-      let loc = Where.skip_with_loc where string in
-      let expr = parse_expression ~where ~loc ~name:"%{...} expression" string in
-      fun ~loc:_ -> expr
-    | Some (string, module_path) ->
-      let arg =
-        let loc = Where.skip_with_loc where string in
-        parse_expression ~where ~loc ~name:"%{...} expression" string
-      in
-      Where.skip where "#";
-      let fn =
-        let loc = Where.skip_with_loc where module_path in
-        parse_ident ~where ~loc ~name:"%{...} module path" module_path
-      in
-      fun ~loc -> pexp_apply ~loc fn [ Nolabel, arg ]
+    let value, module_path, pad_length =
+      match String.rsplit2 string ~on:'#' with
+      | None ->
+        let value = parse_body ~where string in
+        value, None, None
+      | Some (body, formatting) ->
+        let body = parse_body ~where body in
+        Where.skip where "#";
+        let module_path, pad_length =
+          match String.rsplit2 formatting ~on:':' with
+          | None ->
+            let fn = parse_module_path ~where formatting in
+            Some fn, None
+          | Some (module_path, pad_length) ->
+            let fn =
+              if String.is_empty module_path
+              then None
+              else Some (parse_module_path ~where module_path)
+            in
+            Where.skip where ":";
+            let len = parse_pad_length ~where pad_length in
+            fn, Some len
+        in
+        body, module_path, pad_length
+    in
+    let unpadded =
+      match module_path with
+      | None -> fun ~loc:_ -> value
+      | Some fn -> fun ~loc -> pexp_apply ~loc fn [ Nolabel, value ]
+    in
+    match pad_length with
+    | None -> unpadded
+    | Some len ->
+      fun ~loc ->
+        let ex_var = gen_symbol ~prefix:"__string_exp" () in
+        let ex = evar ~loc ex_var in
+        let lenvar = gen_symbol ~prefix:"__string_len" () in
+        [%expr
+          let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
+          let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
+          Stdlib.( ^ )
+            (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
+            [%e ex]]
   in
   let loc_end = Where.loc_end where in
   Where.skip where "}";
