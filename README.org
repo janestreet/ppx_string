@@ -41,10 +41,10 @@ ppx_string is shorter and can oftentimes be less error-prone (it's really easy
 to forget whitespace after =ssh= or around =-p= in the explicit =String.concat=
 version).
 
-To include a literal =%=, say
+To emit the literal sequence =%{=, you can escape it as follows:
 
 #+begin_src ocaml
-[%string {|%{"%"}|}]
+[%string {|%{"%{"}|}]
 #+end_src
 
 To pad strings with spaces on the left, add an integer expression after a colon:
