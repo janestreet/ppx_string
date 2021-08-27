@@ -83,7 +83,6 @@ let add_literal string ~where ~start ~until ~acc =
 let set_locs loc =
   object
     inherit Ast_traverse.map
-
     method! location _ = loc
   end
 ;;
