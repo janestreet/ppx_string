@@ -50,7 +50,7 @@ To emit the literal sequence =%{=, you can escape it as follows:
 To pad strings with spaces on the left, add an integer expression after a colon:
 
 #+begin_src ocaml
-[%string "%{col1#Int:term_width / 2}%{col2#:term_width/4}#{col3#:8}#{col4}"]
+[%string "%{col1#Int:term_width / 2}%{col2#:term_width/4}%{col3#:8}%{col4}"]
 #+end_src
 
 is equivalent to:
