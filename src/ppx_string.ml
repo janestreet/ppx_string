@@ -121,7 +121,7 @@ let parse_ident ~where ~loc ~name module_path =
 
 let parse_body ~where string =
   let loc = Where.skip_with_loc where string in
-  parse_expression ~where ~loc ~name:"#{...} expression" string
+  parse_expression ~where ~loc ~name:"%{...} expression" string
 ;;
 
 let parse_module_path ~where string =
@@ -131,7 +131,7 @@ let parse_module_path ~where string =
 
 let parse_pad_length ~where string =
   let loc = Where.skip_with_loc where string in
-  parse_expression ~where ~loc ~name:"#{...} pad length" string
+  parse_expression ~where ~loc ~name:"%{...} pad length" string
 ;;
 
 let add_interpreted string ~where ~start ~until ~acc =
