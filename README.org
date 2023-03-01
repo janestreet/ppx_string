@@ -57,7 +57,7 @@ is equivalent to:
 
 #+begin_src ocaml
   let pad str len =
-    let pad_len = max 0 (String.length str - len) in
+    let pad_len = max 0 (len - String.length str) in
     let padding = String.make pad_len ' ' in
     padding ^ str
   in

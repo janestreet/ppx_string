@@ -71,13 +71,32 @@ module Where = struct
   ;;
 end
 
-let add_literal string ~where ~start ~until ~acc =
+module Part = struct
+  type t =
+    | Literal of label loc
+    | Interpreted of
+        { loc_start : position
+        ; value : expression
+        ; module_path : longident_loc option
+        ; pad_length : expression option
+        ; loc_end : position
+        }
+end
+
+module Parse_result = struct
+  type t =
+    { parts : Part.t list
+    ; locations_are_precise : bool
+    }
+end
+
+let parse_literal string ~where ~start ~until ~acc =
   if start >= until
   then acc
   else (
     let literal = String.sub string ~pos:start ~len:(until - start) in
     let loc = Where.skip_with_loc where literal in
-    estring ~loc literal :: acc)
+    Part.Literal { txt = literal; loc } :: acc)
 ;;
 
 let set_locs loc =
@@ -101,21 +120,8 @@ let parse_expression ~where ~loc ~name string =
 ;;
 
 let parse_ident ~where ~loc ~name module_path =
-  (* We want to parse a module path here, such as [Core.Int]. Whitespace, comments, etc.
-     have been allowed here historically.
-
-     Parsing a module path using [Longident.parse] would be too restrictive and disallow
-     whitespace, comments, etc.
-
-     Parsing [module_path ^ ".to_string"] assigns locations incorrectly because of the
-     synthetic suffix.
-
-     So we parse [module_path] as an expression. A valid module path, used in an
-     expression context, looks like a nullary variant constructor. So we convert nullary
-     variant constructors to module paths, and reject all other expressions. *)
   match parse_expression ~where ~loc ~name module_path with
-  | { pexp_desc = Pexp_construct (ident, None); _ } ->
-    pexp_ident ~loc { ident with txt = Ldot (ident.txt, "to_string") }
+  | { pexp_desc = Pexp_construct (ident, None); _ } -> ident
   | _ -> parse_error ~loc ~name module_path
 ;;
 
@@ -134,58 +140,38 @@ let parse_pad_length ~where string =
   parse_expression ~where ~loc ~name:"%{...} pad length" string
 ;;
 
-let add_interpreted string ~where ~start ~until ~acc =
+let parse_interpreted string ~where ~start ~until ~acc =
   Where.skip where "%{";
   let loc_start = Where.loc_start where in
-  let expression =
-    let string = String.sub string ~pos:start ~len:(until - start) in
-    let value, module_path, pad_length =
-      match String.rsplit2 string ~on:'#' with
-      | None ->
-        let value = parse_body ~where string in
-        value, None, None
-      | Some (body, formatting) ->
-        let body = parse_body ~where body in
-        Where.skip where "#";
-        let module_path, pad_length =
-          match String.rsplit2 formatting ~on:':' with
-          | None ->
-            let fn = parse_module_path ~where formatting in
-            Some fn, None
-          | Some (module_path, pad_length) ->
-            let fn =
-              if String.is_empty module_path
-              then None
-              else Some (parse_module_path ~where module_path)
-            in
-            Where.skip where ":";
-            let len = parse_pad_length ~where pad_length in
-            fn, Some len
-        in
-        body, module_path, pad_length
-    in
-    let unpadded =
-      match module_path with
-      | None -> fun ~loc:_ -> value
-      | Some fn -> fun ~loc -> pexp_apply ~loc fn [ Nolabel, value ]
-    in
-    match pad_length with
-    | None -> unpadded
-    | Some len ->
-      fun ~loc ->
-        let ex_var = gen_symbol ~prefix:"__string_exp" () in
-        let ex = evar ~loc ex_var in
-        let lenvar = gen_symbol ~prefix:"__string_len" () in
-        [%expr
-          let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
-          let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
-          Stdlib.( ^ )
-            (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
-            [%e ex]]
+  let string = String.sub string ~pos:start ~len:(until - start) in
+  let value, module_path, pad_length =
+    match String.rsplit2 string ~on:'#' with
+    | None ->
+      let value = parse_body ~where string in
+      value, None, None
+    | Some (body, formatting) ->
+      let body = parse_body ~where body in
+      Where.skip where "#";
+      let module_path, pad_length =
+        match String.rsplit2 formatting ~on:':' with
+        | None ->
+          let fn = parse_module_path ~where formatting in
+          Some fn, None
+        | Some (module_path, pad_length) ->
+          let fn =
+            if String.is_empty module_path
+            then None
+            else Some (parse_module_path ~where module_path)
+          in
+          Where.skip where ":";
+          let len = parse_pad_length ~where pad_length in
+          fn, Some len
+      in
+      body, module_path, pad_length
   in
   let loc_end = Where.loc_end where in
   Where.skip where "}";
-  expression ~loc:{ loc_ghost = true; loc_start; loc_end } :: acc
+  Part.Interpreted { loc_start; value; module_path; pad_length; loc_end } :: acc
 ;;
 
 type interpreted =
@@ -206,21 +192,55 @@ let find_interpreted string ~where ~pos =
     | Some rbrace -> { percent; lbrace; rbrace })
 ;;
 
-let rec expand_expressions_from string ~where ~pos ~acc =
+let rec parse_parts_from string ~where ~pos ~acc =
   match find_interpreted string ~where ~pos with
   | None ->
     let len = String.length string in
-    let acc = add_literal string ~where ~start:pos ~until:len ~acc in
+    let acc = parse_literal string ~where ~start:pos ~until:len ~acc in
     List.rev acc
   | Some { percent; lbrace; rbrace } ->
-    let acc = add_literal string ~where ~start:pos ~until:percent ~acc in
-    let acc = add_interpreted string ~where ~start:(lbrace + 1) ~until:rbrace ~acc in
-    expand_expressions_from string ~where ~pos:(rbrace + 1) ~acc
+    let acc = parse_literal string ~where ~start:pos ~until:percent ~acc in
+    let acc = parse_interpreted string ~where ~start:(lbrace + 1) ~until:rbrace ~acc in
+    parse_parts_from string ~where ~pos:(rbrace + 1) ~acc
 ;;
 
-let expand_expressions ~loc ~delimiter string =
-  let where = Where.create ~loc ~delimiter ~string in
-  expand_expressions_from string ~where ~pos:0 ~acc:[]
+let parse_parts ~string_loc ~delimiter string =
+  let where = Where.create ~loc:string_loc ~delimiter ~string in
+  let parts = parse_parts_from string ~where ~pos:0 ~acc:[] in
+  let locations_are_precise = Where.is_precise where in
+  ({ parts; locations_are_precise } : Parse_result.t)
+;;
+
+let expand_part_to_expression part =
+  match (part : Part.t) with
+  | Literal { txt; loc } -> estring txt ~loc
+  | Interpreted { loc_start; value; module_path; pad_length; loc_end } ->
+    let expression =
+      let unpadded =
+        match module_path with
+        | None -> fun ~loc:_ -> value
+        | Some fn ->
+          fun ~loc ->
+            pexp_apply
+              ~loc
+              (pexp_ident ~loc:fn.loc { fn with txt = Ldot (fn.txt, "to_string") })
+              [ Nolabel, value ]
+      in
+      match pad_length with
+      | None -> unpadded
+      | Some len ->
+        fun ~loc ->
+          let ex_var = gen_symbol ~prefix:"__string_exp" () in
+          let ex = evar ~loc ex_var in
+          let lenvar = gen_symbol ~prefix:"__string_len" () in
+          [%expr
+            let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
+            let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
+            Stdlib.( ^ )
+              (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
+              [%e ex]]
+    in
+    expression ~loc:{ loc_ghost = true; loc_start; loc_end }
 ;;
 
 let concatenate ~loc expressions =
@@ -231,7 +251,9 @@ let concatenate ~loc expressions =
 ;;
 
 let expand ~expr_loc ~string_loc ~string ~delimiter =
-  concatenate ~loc:expr_loc (expand_expressions ~loc:string_loc ~delimiter string)
+  (parse_parts ~string_loc ~delimiter string).parts
+  |> List.map ~f:expand_part_to_expression
+  |> concatenate ~loc:expr_loc
 ;;
 
 let () =
