@@ -72,15 +72,48 @@ module Where = struct
 end
 
 module Part = struct
+  module Interpreted = struct
+    type t =
+      { loc_start : position
+      ; value : expression
+      ; module_path : longident_loc option
+      ; pad_length : expression option
+      ; loc_end : position
+      }
+
+    let to_expression { loc_start; value; module_path; pad_length; loc_end } =
+      let expression =
+        let unpadded =
+          match module_path with
+          | None -> fun ~loc:_ -> value
+          | Some fn ->
+            fun ~loc ->
+              pexp_apply
+                ~loc
+                (pexp_ident ~loc:fn.loc { fn with txt = Ldot (fn.txt, "to_string") })
+                [ Nolabel, value ]
+        in
+        match pad_length with
+        | None -> unpadded
+        | Some len ->
+          fun ~loc ->
+            let ex_var = gen_symbol ~prefix:"__string_exp" () in
+            let ex = evar ~loc ex_var in
+            let lenvar = gen_symbol ~prefix:"__string_len" () in
+            [%expr
+              let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
+              let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
+              Stdlib.( ^ )
+                (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
+                [%e ex]]
+      in
+      expression ~loc:{ loc_ghost = true; loc_start; loc_end }
+    ;;
+  end
+
   type t =
     | Literal of label loc
-    | Interpreted of
-        { loc_start : position
-        ; value : expression
-        ; module_path : longident_loc option
-        ; pad_length : expression option
-        ; loc_end : position
-        }
+    | Interpreted of Interpreted.t
 end
 
 module Parse_result = struct
@@ -214,33 +247,7 @@ let parse_parts ~string_loc ~delimiter string =
 let expand_part_to_expression part =
   match (part : Part.t) with
   | Literal { txt; loc } -> estring txt ~loc
-  | Interpreted { loc_start; value; module_path; pad_length; loc_end } ->
-    let expression =
-      let unpadded =
-        match module_path with
-        | None -> fun ~loc:_ -> value
-        | Some fn ->
-          fun ~loc ->
-            pexp_apply
-              ~loc
-              (pexp_ident ~loc:fn.loc { fn with txt = Ldot (fn.txt, "to_string") })
-              [ Nolabel, value ]
-      in
-      match pad_length with
-      | None -> unpadded
-      | Some len ->
-        fun ~loc ->
-          let ex_var = gen_symbol ~prefix:"__string_exp" () in
-          let ex = evar ~loc ex_var in
-          let lenvar = gen_symbol ~prefix:"__string_len" () in
-          [%expr
-            let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
-            let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
-            Stdlib.( ^ )
-              (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
-              [%e ex]]
-    in
-    expression ~loc:{ loc_ghost = true; loc_start; loc_end }
+  | Interpreted interpreted -> Part.Interpreted.to_expression interpreted
 ;;
 
 let concatenate ~loc expressions =

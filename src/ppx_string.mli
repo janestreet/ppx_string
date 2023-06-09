@@ -2,15 +2,21 @@ open! Base
 open Ppxlib
 
 module Part : sig
+  module Interpreted : sig
+    type t =
+      { loc_start : position
+      ; value : expression
+      ; module_path : longident_loc option
+      ; pad_length : expression option
+      ; loc_end : position
+      }
+
+    val to_expression : t -> expression
+  end
+
   type t =
     | Literal of label loc
-    | Interpreted of
-        { loc_start : position
-        ; value : expression
-        ; module_path : longident_loc option
-        ; pad_length : expression option
-        ; loc_end : position
-        }
+    | Interpreted of Interpreted.t
 end
 
 module Parse_result : sig
