@@ -216,13 +216,13 @@ type interpreted =
 let find_interpreted string ~where ~pos =
   String.substr_index string ~pos ~pattern:"%{"
   |> Option.map ~f:(fun percent ->
-    let lbrace = percent + 1 in
-    match String.substr_index string ~pos:(lbrace + 1) ~pattern:"}" with
-    | None ->
-      Where.skip where (String.sub string ~pos ~len:(percent - pos));
-      let loc = Where.skip_with_loc where "%{" in
-      Location.raise_errorf ~loc "unterminated %%{"
-    | Some rbrace -> { percent; lbrace; rbrace })
+       let lbrace = percent + 1 in
+       match String.substr_index string ~pos:(lbrace + 1) ~pattern:"}" with
+       | None ->
+         Where.skip where (String.sub string ~pos ~len:(percent - pos));
+         let loc = Where.skip_with_loc where "%{" in
+         Location.raise_errorf ~loc "unterminated %%{"
+       | Some rbrace -> { percent; lbrace; rbrace })
 ;;
 
 let rec parse_parts_from string ~where ~pos ~acc =
@@ -273,7 +273,7 @@ let () =
           Ast_pattern.(
             pstr (pstr_eval (pexp_constant (pconst_string __' __ __)) nil ^:: nil))
           (fun ~loc:expr_loc ~path:_ { loc = string_loc; txt = string } _ delimiter ->
-             Merlin_helpers.hide_expression
-               (expand ~expr_loc ~string_loc ~string ~delimiter))
+            Merlin_helpers.hide_expression
+              (expand ~expr_loc ~string_loc ~string ~delimiter))
       ]
 ;;
