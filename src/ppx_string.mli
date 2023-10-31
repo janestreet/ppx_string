@@ -9,6 +9,9 @@ module Part : sig
       ; module_path : longident_loc option
       ; pad_length : expression option
       ; loc_end : position
+      ; interpreted_string : string
+          (** [interpreted_string] is the string of the interpreted part. (e.g. in the example
+          %{foo#Foo}, the string is "foo#Foo") *)
       }
 
     val to_expression : t -> expression

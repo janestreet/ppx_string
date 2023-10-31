@@ -79,9 +79,12 @@ module Part = struct
       ; module_path : longident_loc option
       ; pad_length : expression option
       ; loc_end : position
+      ; interpreted_string : string
       }
 
-    let to_expression { loc_start; value; module_path; pad_length; loc_end } =
+    let to_expression
+      { loc_start; value; module_path; pad_length; loc_end; interpreted_string = _ }
+      =
       let expression =
         let unpadded =
           match module_path with
@@ -204,7 +207,9 @@ let parse_interpreted string ~where ~start ~until ~acc =
   in
   let loc_end = Where.loc_end where in
   Where.skip where "}";
-  Part.Interpreted { loc_start; value; module_path; pad_length; loc_end } :: acc
+  Part.Interpreted
+    { loc_start; value; module_path; pad_length; loc_end; interpreted_string = string }
+  :: acc
 ;;
 
 type interpreted =
