@@ -1,3 +1,7 @@
-(library (name ppx_string) (public_name ppx_string) (kind ppx_rewriter)
+(library
+ (name ppx_string)
+ (public_name ppx_string)
+ (kind ppx_rewriter)
  (libraries base compiler-libs.common ppxlib)
- (preprocess (pps ppx_base ppxlib.metaquot ppxlib.traverse)))
+ (preprocess
+  (pps ppx_base ppxlib.metaquot ppxlib.traverse)))
