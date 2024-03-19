@@ -1,0 +1,5 @@
+(library
+ (name ppx_string_runtime)
+ (public_name ppx_string.runtime)
+ (libraries)
+ (preprocess no_preprocessing))

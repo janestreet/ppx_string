@@ -1,6 +1,7 @@
 open Base
 open Ppxlib
 open Ast_builder.Default
+include Ppx_string_intf.Definitions
 
 module Where = struct
   type t =
@@ -61,8 +62,8 @@ module Where = struct
     | Some id -> Printf.sprintf "{%s|" id
   ;;
 
-  let create ~loc ~string ~delimiter =
-    if has_escapes ~loc ~string ~delimiter
+  let create ~loc ~string ~delimiter ~preprocess_before_parsing =
+    if Option.is_some preprocess_before_parsing || has_escapes ~loc ~string ~delimiter
     then Imprecise { loc with loc_ghost = true }
     else (
       let t = Precise { position = loc.loc_start } in
@@ -71,60 +72,30 @@ module Where = struct
   ;;
 end
 
-module Part = struct
-  module Interpreted = struct
-    type t =
-      { loc_start : position
-      ; value : expression
-      ; module_path : longident_loc option
-      ; pad_length : expression option
-      ; loc_end : position
-      ; interpreted_string : string
-      }
+let dot id name = pexp_ident ~loc:id.loc { id with txt = Ldot (id.txt, name) }
 
-    let to_expression
-      { loc_start; value; module_path; pad_length; loc_end; interpreted_string = _ }
-      =
-      let expression =
-        let unpadded =
-          match module_path with
-          | None -> fun ~loc:_ -> value
-          | Some fn ->
-            fun ~loc ->
-              pexp_apply
-                ~loc
-                (pexp_ident ~loc:fn.loc { fn with txt = Ldot (fn.txt, "to_string") })
-                [ Nolabel, value ]
-        in
-        match pad_length with
-        | None -> unpadded
-        | Some len ->
-          fun ~loc ->
-            let ex_var = gen_symbol ~prefix:"__string_exp" () in
-            let ex = evar ~loc ex_var in
-            let lenvar = gen_symbol ~prefix:"__string_len" () in
-            [%expr
-              let [%p pvar ~loc ex_var] = [%e unpadded ~loc] in
-              let [%p pvar ~loc lenvar] = Stdlib.String.length [%e ex] in
-              Stdlib.( ^ )
-                (Stdlib.String.make (Stdlib.max 0 ([%e len] - [%e evar ~loc lenvar])) ' ')
-                [%e ex]]
-      in
-      expression ~loc:{ loc_ghost = true; loc_start; loc_end }
-    ;;
-  end
+let config_expr ~(config : Config.t) ~loc name =
+  dot { loc; txt = config.fully_qualified_runtime_module } name
+;;
 
-  type t =
-    | Literal of label loc
-    | Interpreted of Interpreted.t
-end
-
-module Parse_result = struct
-  type t =
-    { parts : Part.t list
-    ; locations_are_precise : bool
-    }
-end
+let interpret
+  ~(config : Config.t)
+  ({ loc_start; value; module_path; pad_length; loc_end; interpreted_string = _ } :
+    Part.Interpreted.t)
+  =
+  let loc = { loc_ghost = true; loc_start; loc_end } in
+  let unpadded =
+    match module_path with
+    | None -> value
+    | Some fn ->
+      [%expr
+        [%e config_expr ~config ~loc "convert"]
+          ([%e dot fn config.conversion_function_name] [%e value])]
+  in
+  match pad_length with
+  | None -> unpadded
+  | Some len -> [%expr [%e config_expr ~config ~loc "pad"] [%e unpadded] ~len:[%e len]]
+;;
 
 let parse_literal string ~where ~start ~until ~acc =
   if start >= until
@@ -230,7 +201,7 @@ let find_interpreted string ~where ~pos =
        | Some rbrace -> { percent; lbrace; rbrace })
 ;;
 
-let rec parse_parts_from string ~where ~pos ~acc =
+let rec parse_from string ~where ~pos ~acc =
   match find_interpreted string ~where ~pos with
   | None ->
     let len = String.length string in
@@ -239,46 +210,63 @@ let rec parse_parts_from string ~where ~pos ~acc =
   | Some { percent; lbrace; rbrace } ->
     let acc = parse_literal string ~where ~start:pos ~until:percent ~acc in
     let acc = parse_interpreted string ~where ~start:(lbrace + 1) ~until:rbrace ~acc in
-    parse_parts_from string ~where ~pos:(rbrace + 1) ~acc
+    parse_from string ~where ~pos:(rbrace + 1) ~acc
 ;;
 
-let parse_parts ~string_loc ~delimiter string =
-  let where = Where.create ~loc:string_loc ~delimiter ~string in
-  let parts = parse_parts_from string ~where ~pos:0 ~acc:[] in
+let parse ~(config : Config.t) ~string_loc ~delimiter string =
+  let preprocess_before_parsing = config.preprocess_before_parsing in
+  let string =
+    match preprocess_before_parsing with
+    | None -> string
+    | Some preprocess -> preprocess string
+  in
+  let where =
+    Where.create ~loc:string_loc ~delimiter ~string ~preprocess_before_parsing
+  in
+  let parts = parse_from string ~where ~pos:0 ~acc:[] in
   let locations_are_precise = Where.is_precise where in
   ({ parts; locations_are_precise } : Parse_result.t)
 ;;
 
-let expand_part_to_expression part =
+let expand_part_to_expression ~config part =
   match (part : Part.t) with
-  | Literal { txt; loc } -> estring txt ~loc
-  | Interpreted interpreted -> Part.Interpreted.to_expression interpreted
+  | Literal { txt; loc } ->
+    [%expr [%e config_expr ~config ~loc "of_string"] [%e estring txt ~loc]]
+  | Interpreted interpreted -> interpret ~config interpreted
 ;;
 
-let concatenate ~loc expressions =
+let concatenate ~config ~loc expressions =
   match expressions with
-  | [] -> [%expr ""]
-  | [ expr ] -> [%expr ([%e expr] : Stdlib.String.t)]
-  | multiple -> [%expr Stdlib.String.concat "" [%e elist ~loc multiple]]
+  | [] -> [%expr [%e config_expr ~config ~loc "empty"]]
+  | [ expr ] -> [%expr [%e config_expr ~config ~loc "identity"] [%e expr]]
+  | multiple -> [%expr [%e config_expr ~config ~loc "concat"] [%e elist ~loc multiple]]
 ;;
 
-let expand ~expr_loc ~string_loc ~string ~delimiter =
-  (parse_parts ~string_loc ~delimiter string).parts
-  |> List.map ~f:expand_part_to_expression
-  |> concatenate ~loc:expr_loc
+let expand ~config ~expr_loc ~string_loc ~string ~delimiter =
+  (parse ~config ~string_loc ~delimiter string).parts
+  |> List.map ~f:(expand_part_to_expression ~config)
+  |> concatenate ~config ~loc:expr_loc
+;;
+
+let extension ~name ~(config : Config.t) =
+  Extension.declare
+    name
+    Extension.Context.expression
+    Ast_pattern.(pstr (pstr_eval (pexp_constant (pconst_string __' __ __)) nil ^:: nil))
+    (fun ~loc:expr_loc ~path:_ { loc = string_loc; txt = string } _ delimiter ->
+      Merlin_helpers.hide_expression
+        (expand ~config ~expr_loc ~string_loc ~string ~delimiter))
+;;
+
+let (config_for_string : Config.t) =
+  { fully_qualified_runtime_module = Ldot (Lident "Ppx_string_runtime", "For_string")
+  ; conversion_function_name = "to_string"
+  ; preprocess_before_parsing = None
+  }
 ;;
 
 let () =
   Ppxlib.Driver.register_transformation
     "ppx_string"
-    ~extensions:
-      [ Extension.declare
-          "ppx_string.string"
-          Extension.Context.expression
-          Ast_pattern.(
-            pstr (pstr_eval (pexp_constant (pconst_string __' __ __)) nil ^:: nil))
-          (fun ~loc:expr_loc ~path:_ { loc = string_loc; txt = string } _ delimiter ->
-            Merlin_helpers.hide_expression
-              (expand ~expr_loc ~string_loc ~string ~delimiter))
-      ]
+    ~extensions:[ extension ~name:"ppx_string.string" ~config:config_for_string ]
 ;;

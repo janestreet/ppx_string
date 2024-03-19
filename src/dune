@@ -3,5 +3,6 @@
  (public_name ppx_string)
  (kind ppx_rewriter)
  (libraries base compiler-libs.common ppxlib)
+ (ppx_runtime_libraries ppx_string.runtime)
  (preprocess
   (pps ppx_base ppxlib.metaquot ppxlib.traverse)))
