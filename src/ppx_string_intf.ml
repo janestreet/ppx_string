@@ -7,12 +7,12 @@ module Definitions = struct
   module Config = struct
     type t =
       { fully_qualified_runtime_module : Longident.t
-          (** Where to find an implementation of [Ppx_string_runtime.S]. The implementation of
+      (** Where to find an implementation of [Ppx_string_runtime.S]. The implementation of
           [[%string]] is at [Ldot (Lident "Ppx_string_runtime", "For_string")] *)
       ; conversion_function_name : string
-          (** Conversion function implied by ["%{expr#Module}"], e.g. ["to_string"]. *)
+      (** Conversion function implied by ["%{expr#Module}"], e.g. ["to_string"]. *)
       ; preprocess_before_parsing : (string -> string) option
-          (** Preprocessing to apply before parsing the string for interpolation. If [None],
+      (** Preprocessing to apply before parsing the string for interpolation. If [None],
           source locations can be computed precisely based on the result of parsing. *)
       }
   end
@@ -26,7 +26,7 @@ module Definitions = struct
         ; pad_length : expression option
         ; loc_end : position
         ; interpreted_string : string
-            (** [interpreted_string] is the string of the interpreted part. (e.g. in the
+        (** [interpreted_string] is the string of the interpreted part. (e.g. in the
             example %{foo#Foo}, the string is "foo#Foo") *)
         }
     end

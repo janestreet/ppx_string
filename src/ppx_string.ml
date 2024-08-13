@@ -192,13 +192,13 @@ type interpreted =
 let find_interpreted string ~where ~pos =
   String.substr_index string ~pos ~pattern:"%{"
   |> Option.map ~f:(fun percent ->
-       let lbrace = percent + 1 in
-       match String.substr_index string ~pos:(lbrace + 1) ~pattern:"}" with
-       | None ->
-         Where.skip where (String.sub string ~pos ~len:(percent - pos));
-         let loc = Where.skip_with_loc where "%{" in
-         Location.raise_errorf ~loc "unterminated %%{"
-       | Some rbrace -> { percent; lbrace; rbrace })
+    let lbrace = percent + 1 in
+    match String.substr_index string ~pos:(lbrace + 1) ~pattern:"}" with
+    | None ->
+      Where.skip where (String.sub string ~pos ~len:(percent - pos));
+      let loc = Where.skip_with_loc where "%{" in
+      Location.raise_errorf ~loc "unterminated %%{"
+    | Some rbrace -> { percent; lbrace; rbrace })
 ;;
 
 let rec parse_from string ~where ~pos ~acc =
