@@ -14,5 +14,5 @@ module For_string = struct
     if n >= len then t else String.make (len - n) ' ' ^ t
   ;;
 
-  external identity : string -> string = "%identity"
+  external identity : string -> string @@ portable = "%identity"
 end
