@@ -5,14 +5,14 @@
     Otherwise they introduce new aliases for the types in question, and error messages or
     Merlin may start referring to them. *)
 module type S = sig
-  (** Result type of interpolation, and of interpolated %{values}. *)
+  (** Result type of interpolation, and of interpolated [%{values}]. *)
   type t
 
-  (** Result type of %{converted#String} interpolated values. This will often be either
+  (** Result type of %[{converted#String}] interpolated values. This will often be either
       [string] or [t], depending on what is convenient for the configured ppx. *)
   type conversion
 
-  (** Type of length values for %{padding#:8}. *)
+  (** Type of length values for %[{padding#:8}]. *)
   type length
 
   (** Empty string. *)

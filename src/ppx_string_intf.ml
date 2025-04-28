@@ -27,7 +27,7 @@ module Definitions = struct
         ; loc_end : position
         ; interpreted_string : string
         (** [interpreted_string] is the string of the interpreted part. (e.g. in the
-            example %{foo#Foo}, the string is "foo#Foo") *)
+            example %[{foo#Foo}], the string is "foo#Foo") *)
         }
     end
 
@@ -57,8 +57,8 @@ module type Ppx_string = sig
     -> string
     -> Parse_result.t
 
-  (** Interpret an interpolated string as an expression, including %{conversions#String}
-      and %{padding#:8}. *)
+  (** Interpret an interpolated string as an expression, including %[{conversions#String}]
+      and %[{padding#:8}]. *)
   val interpret : config:Config.t -> Part.Interpreted.t -> expression
 
   (** Combines [parse], [interpret], and concatenation to expand an interpolated string to
