@@ -268,5 +268,8 @@ let (config_for_string : Config.t) =
 let () =
   Ppxlib.Driver.register_transformation
     "ppx_string"
-    ~extensions:[ extension ~name:"ppx_string.string" ~config:config_for_string ]
+    ~extensions:
+      [ extension ~name:"ppx_string.string" ~config:config_for_string
+      ; extension ~name:"ppx_string.@string.global" ~config:config_for_string
+      ]
 ;;

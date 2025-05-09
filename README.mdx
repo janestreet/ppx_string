@@ -1,0 +1,169 @@
+ppx_string
+==========
+
+<!--
+```ocaml
+# open Core;;
+```
+-->
+
+This extension provides a syntax for string interpolation. Here is an example of
+its features:
+
+```ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  [%string "ssh %{user}@%{host} -p %{port#Int} %{Sys.quote script}"]
+;;
+```
+
+```ocaml
+# script_remotely "jane-doe" "workstation-1" 22 {|echo "use ppx_string to interpolate"|}
+- : string =
+"ssh jane-doe@workstation-1 -p 22 'echo \"use ppx_string to interpolate\"'"
+```
+
+The above function is equivalent to:
+
+```ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  String.concat
+    [ "ssh "
+    ; user
+    ; "@"
+    ; host
+    ; " -p "
+    ; Int.to_string port
+    ; " "
+    ; Sys.quote script
+    ]
+;;
+```
+
+`ppx_string` also works with the shorthand string extension syntax:
+
+```ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  {%string|ssh %{user}@%{host} -p %{port#Int} %{Sys.quote script}|}
+;;
+```
+
+Compared to `Printf.sprintf`:
+
+```ocaml
+let script_remotely (user : string) (host : string) (port : int) (script : string) =
+  sprintf "ssh %s@%s -p %d %s" user host port (Sys.quote script)
+;;
+```
+
+Having the values inline instead of after the format string can make it easier
+to understand the resulting string, and avoids the potential mistake of passing
+arguments in the wrong order. This is truer the more format arguments there are.
+On the other hand, some things are much easier with printf: pad numbers with
+zeroes, pad strings on the right, display floats in a specific formats, etc.
+
+Compared to manually writing something like `String.concat` version above,
+`ppx_string` is shorter and can oftentimes be less error-prone (it's really easy
+to forget whitespace after `ssh` or around `-p` in the explicit `String.concat`
+version).
+
+## Interpolation syntax
+
+<style>
+table th:first-of-type { width: 30%; }
+</style>
+
+| Syntax                | Meaning                                                                          |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `%{expr}`             | Directly insert the `string` expression `expr`                                   |
+| `%{expr#Mod}`         | Insert the result of converting `expr` to a `string` via `Mod.to_string`         |
+| `%{expr#Mod:int_expr}`| Left-pad `Mod.to_string expr` to a width of at least `int_expr`                  |
+| `%{expr#:int_expr}`   | Left-pad the `string` expression `expr` to a width of at least `int_expr` spaces |
+
+To emit the literal sequence `%{`, you can escape it as follows:
+
+```ocaml
+# {%string|%{"%{"}|}
+- : string = "%{"
+```
+
+To pad strings with spaces on the left, add an integer expression after a colon:
+
+```ocaml
+# let term_width = 60 in
+  let items =
+    [ "jane-doe", "workstation-1", 22, {|echo "use ppx_string to interpolate"|}
+    ; "root", "workstation-1", 8080, {|echo "it can even pad"|}
+    ]
+  in
+  List.map items ~f:(fun (col1, col2, col3, col4) ->
+    {%string|%{col1#:term_width / 6}%{col2#:term_width/4}%{col3#Int:8} %{col4}|})
+- : string list =
+["  jane-doe  workstation-1      22 echo \"use ppx_string to interpolate\"";
+ "      root  workstation-1    8080 echo \"it can even pad\""]
+```
+is equivalent to:
+
+```ocaml
+# let pad str len =
+    let pad_len = max 0 (len - String.length str) in
+    let padding = String.make pad_len ' ' in
+    padding ^ str
+  in
+  let term_width = 60 in
+  let items =
+    [ "jane-doe", "workstation-1", 22, {|echo "use ppx_string to interpolate"|}
+    ; "root", "box-42", 8080, {|echo "it can even pad"|}
+    ]
+  in
+  List.map items ~f:(fun (col1, col2, col3, col4) ->
+    String.concat
+      [ pad col1 (term_width / 6)
+      ; pad col2 (term_width / 4)
+      ; pad (Int.to_string col3) 8
+      ; " "
+      ; col4
+      ])
+- : string list =
+["  jane-doe  workstation-1      22 echo \"use ppx_string to interpolate\"";
+ "      root         box-42    8080 echo \"it can even pad\""]
+```
+(note that the pad length can be dynamic, as with the format string `"%*s"`)
+
+## Interacting with and producing local strings
+
+`ppx_string` currently does not consume or produce `local` interpolations:
+
+```ocaml
+let double (string @ local) = {%string|%{string} %{string}|}
+```
+```mdx-error
+Line 1, characters 35-41:
+Error: This value escapes its region.
+```
+
+```ocaml
+# let assert_global : 'a -> 'a = fun x -> x in
+  assert_global {%string|one %{2#Int} three %{4#Int}|}
+- : string = "one 2 three 4"
+```
+
+We plan to support accepting `local` strings in `ppx_string` soon. This may
+sometimes result in extra calls to `String.globalize` compared to the current
+behavior (specifically, when the string contains exactly one interpolated
+component, and so could be returned directly if known not to be stack-allocated),
+so we have added a `[%string.global]` extension point: this extension point
+currently behaves the same as `[%string]`, but in the future will continue to
+accept only `global` interpolations in order to insert fewer calls to
+`globalize`.
+
+```ocaml
+# let script_remotely (user : string) (host : string) (port : int) (script : string) =
+    {%string.global|ssh %{user}@%{host} -p %{port#Int} %{Sys.quote script}|}
+val script_remotely : string -> string -> int -> string -> string = <fun>
+# script_remotely "jane-doe" "workstation-1" 22 {|echo "use ppx_string to interpolate"|}
+- : string =
+"ssh jane-doe@workstation-1 -p 22 'echo \"use ppx_string to interpolate\"'"
+```
+
+We also plan eventually to support constructing `local` strings with
+`ppx_string`.
