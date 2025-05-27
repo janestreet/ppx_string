@@ -72,6 +72,10 @@ module Where = struct
   ;;
 end
 
+let if_stack_allocating ~(config : Config.t) f expr =
+  if config.assert_list_is_stack_allocated then f expr else expr
+;;
+
 let dot id name = pexp_ident ~loc:id.loc { id with txt = Ldot (id.txt, name) }
 
 let config_expr ~(config : Config.t) ~loc name =
@@ -235,16 +239,30 @@ let expand_part_to_expression ~config part =
   | Interpreted interpreted -> interpret ~config interpreted
 ;;
 
-let concatenate ~config ~loc expressions =
-  match expressions with
+let concatenate ~config ~loc (parts_and_exprs : (Part.t * expression) list) =
+  let nontail_if_stack_allocating expr =
+    if_stack_allocating ~config (fun e -> [%expr [%e e] [@nontail]]) expr
+  in
+  match parts_and_exprs with
   | [] -> [%expr [%e config_expr ~config ~loc "empty"]]
-  | [ expr ] -> [%expr [%e config_expr ~config ~loc "identity"] [%e expr]]
-  | multiple -> [%expr [%e config_expr ~config ~loc "concat"] [%e elist ~loc multiple]]
+  | [ (part, expr) ] ->
+    (match part with
+     | Literal _ -> expr
+     | Interpreted _ ->
+       [%expr [%e config_expr ~config ~loc "finish_one"] [%e expr]]
+       |> nontail_if_stack_allocating)
+  | multiple ->
+    [%expr
+      [%e config_expr ~config ~loc "concat"]
+        [%e
+          elist ~loc (List.map ~f:snd multiple)
+          |> if_stack_allocating ~config (fun e -> [%expr stack_ [%e e]])]]
+    |> nontail_if_stack_allocating
 ;;
 
 let expand ~config ~expr_loc ~string_loc ~string ~delimiter =
   (parse ~config ~string_loc ~delimiter string).parts
-  |> List.map ~f:(expand_part_to_expression ~config)
+  |> List.map ~f:(fun part -> part, expand_part_to_expression ~config part)
   |> concatenate ~config ~loc:expr_loc
 ;;
 
@@ -258,10 +276,13 @@ let extension ~name ~(config : Config.t) =
         (expand ~config ~expr_loc ~string_loc ~string ~delimiter))
 ;;
 
-let (config_for_string : Config.t) =
-  { fully_qualified_runtime_module = Ldot (Lident "Ppx_string_runtime", "For_string")
+let config_for_string ~local : Config.t =
+  let suffix = if local then "__local" else "" in
+  { fully_qualified_runtime_module =
+      Ldot (Lident "Ppx_string_runtime", "For_string" ^ suffix)
   ; conversion_function_name = "to_string"
   ; preprocess_before_parsing = None
+  ; assert_list_is_stack_allocated = local
   }
 ;;
 
@@ -269,7 +290,9 @@ let () =
   Ppxlib.Driver.register_transformation
     "ppx_string"
     ~extensions:
-      [ extension ~name:"ppx_string.string" ~config:config_for_string
-      ; extension ~name:"ppx_string.@string.global" ~config:config_for_string
+      [ extension ~name:"ppx_string.string" ~config:(config_for_string ~local:true)
+      ; extension
+          ~name:"ppx_string.@string.global"
+          ~config:(config_for_string ~local:false)
       ]
 ;;

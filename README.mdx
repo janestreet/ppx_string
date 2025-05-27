@@ -131,38 +131,79 @@ is equivalent to:
 
 ## Interacting with and producing local strings
 
-`ppx_string` currently does not consume or produce `local` interpolations:
+`ppx_string` can consume `local` expressions in interpolated components:
 
 ```ocaml
-let double (string @ local) = {%string|%{string} %{string}|}
+# let module Local_string = struct
+    type t = { box : string }
+
+    let to_string ({ box } @ local) = box
+  end
+  in
+  let f (s : string @@ local) (ls : Local_string.t @@ local) =
+    {%string|concatenated %{s} and boxed %{ls#Local_string}|}
+  in
+  f "a" { box = "b" }
+- : string = "concatenated a and boxed b"
 ```
-```mdx-error
-Line 1, characters 35-41:
+
+The resulting concatenation is still allocated on the heap and available
+`@ global`:
+
+```ocaml
+# let assert_global : 'a @ global -> 'a @ global = fun x -> x in
+  let local_ s = "this input is local" in
+  assert_global {%string|the result is global, even though %{s}|}
+- : string = "the result is global, even though this input is local"
+```
+
+It is safe to return the result of the concatenation globally even if
+it has local components because we anyways allocate a new string for
+the contents of the concatenation, effectively "globalizing" any component.
+Globalizing in this way only incurs an additional cost in the case
+where the contents of the `[%string]` are a single interpolated
+component: in this case we need to globalize the component, when we
+otherwise could have returned it directly.
+
+For example:
+
+```ocaml
+# let local_ s = "this input is local" in
+  {%string|%{s}|}
+- : string = "this input is local"
+```
+
+effectively translates to
+
+```ocaml
+# let local_ s = "this input is local" in
+  String.globalize s
+- : string = "this input is local"
+```
+
+rather than
+
+```ocaml
+# let local_ s = "this input is local" in
+  Fn.id s
+Line 2, characters 3-10:
 Error: This value escapes its region.
 ```
 
-```ocaml
-# let assert_global : 'a -> 'a = fun x -> x in
-  assert_global {%string|one %{2#Int} three %{4#Int}|}
-- : string = "one 2 three 4"
-```
-
-We plan to support accepting `local` strings in `ppx_string` soon. This may
-sometimes result in extra calls to `String.globalize` compared to the current
-behavior (specifically, when the string contains exactly one interpolated
-component, and so could be returned directly if known not to be stack-allocated),
-so we have added a `[%string.global]` extension point: this extension point
-currently behaves the same as `[%string]`, but in the future will continue to
-accept only `global` interpolations in order to insert fewer calls to
-`globalize`.
+Before `ppx_string` supported `local` inputs, a singleton interpolated
+expression was simply returned without globalizing, as in the latter example.
+The legacy behavior --- where inputs to the concatenation are accepted
+`@ global` and singleton inputs are returned as-is, without
+globalizing --- is still available via the `[%string.global]` extension:
 
 ```ocaml
-# let script_remotely (user : string) (host : string) (port : int) (script : string) =
-    {%string.global|ssh %{user}@%{host} -p %{port#Int} %{Sys.quote script}|}
-val script_remotely : string -> string -> int -> string -> string = <fun>
-# script_remotely "jane-doe" "workstation-1" 22 {|echo "use ppx_string to interpolate"|}
-- : string =
-"ssh jane-doe@workstation-1 -p 22 'echo \"use ppx_string to interpolate\"'"
+# let s = "no globalization occurs (trust me)" in
+  {%string.global|%{s}|}
+- : string = "no globalization occurs (trust me)"
+# let local_ s = "this input is local" in
+  {%string.global|%{s}|}
+Line 2, characters 7-8:
+Error: This value escapes its region.
 ```
 
 We also plan eventually to support constructing `local` strings with
