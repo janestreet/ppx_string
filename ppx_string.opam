@@ -13,8 +13,9 @@ depends: [
   "ocaml" {>= "5.1.0"}
   "base"
   "ppx_base"
-  "dune"     {>= "3.17.0"}
-  "ppxlib"   {>= "0.33.0" & < "0.36.0"}
+  "ppx_template"
+  "dune"         {>= "3.17.0"}
+  "ppxlib"       {>= "0.33.0" & < "0.36.0"}
 ]
 available: arch != "arm32" & arch != "x86_32"
 synopsis: "Ppx extension for string interpolation"
