@@ -140,7 +140,7 @@ is equivalent to:
     let to_string ({ box } @ local) = box
   end
   in
-  let f (s : string @@ local) (ls : Local_string.t @@ local) =
+  let f (s : string @ local) (ls : Local_string.t @ local) =
     {%string|concatenated %{s} and boxed %{ls#Local_string}|}
   in
   f "a" { box = "b" }
