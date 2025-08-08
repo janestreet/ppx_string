@@ -45,11 +45,24 @@ module Definitions = struct
       ; locations_are_precise : bool
       }
   end
+
+  module Config_modes = struct
+    type t =
+      | Local_input_stack_output
+      | Local_input_heap_output
+      | Global_input_heap_output
+  end
 end
 
 module type Ppx_string = sig
   include module type of struct
     include Definitions
+  end
+
+  module Config_modes : sig
+    include module type of struct
+      include Config_modes
+    end
   end
 
   (** Parse a string to find interpolated substrings. *)
@@ -80,5 +93,5 @@ module type Ppx_string = sig
   (** Configuration for [[%string]] family: string type and conversion type are [string],
       length type is [int], and no preprocessing. When [~local:true], the configuration
       for [[%string]], otherwise the configuration for [[%string.global]] *)
-  val config_for_string : local:bool -> Config.t
+  val config_for_string : Config_modes.t -> Config.t
 end

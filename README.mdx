@@ -131,6 +131,8 @@ is equivalent to:
 
 ## Interacting with and producing local strings
 
+### Consuming `local` strings (works by default!)
+
 `ppx_string` can consume `local` expressions in interpolated components:
 
 ```ocaml
@@ -140,7 +142,7 @@ is equivalent to:
     let to_string ({ box } @ local) = box
   end
   in
-  let f (s : string @@ local) (ls : Local_string.t @@ local) =
+  let f (s : string @ local) (ls : Local_string.t @ local) =
     {%string|concatenated %{s} and boxed %{ls#Local_string}|}
   in
   f "a" { box = "b" }
@@ -206,5 +208,50 @@ Line 2, characters 7-8:
 Error: This value escapes its region.
 ```
 
-We also plan eventually to support constructing `local` strings with
-`ppx_string`.
+### Producing stack-allocated strings
+
+`[%string.stack]` lets you write the concatenation to a stack-allocated string. It
+translates the `%{expr#Mod}` syntax into `(Mod.to_string [@alloc stack]) expr` (note the
+`[@alloc stack]`), so the intermediate results are also stack-allocated. You can see that
+this allows the example below to be `[@@zero_alloc]`:
+
+```ocaml
+module String_opt : sig
+  type t = string option
+
+  val%template to_string : t @ m -> string @ m
+  [@@zero_alloc] [@@alloc __ @ m = (heap_global, stack_local)]
+end = struct
+  type t = string option
+
+  let%template to_string (t @ m) =
+    (Option.value [@mode m]) t ~default:"<None>" [@exclave_if_stack a]
+  [@@zero_alloc] [@@alloc a @ m = (heap_global, stack_local)]
+end
+
+let recent_logins (success : String_opt.t @ local) (failure : String_opt.t @ local)
+  = exclave_
+  {%string.stack|Recent logins: Success %{success#String_opt}, Failure %{failure#String_opt}|}
+[@@zero_alloc]
+```
+
+### Interoperating with templates
+
+`ppx_string` also defines a `[%string.alloc]` extension point that allows
+[`ppx_template`](%{root}/ppx/ppx_template/doc/README.mdx) allocators to determine where
+the resulting string is allocated. `[%string.alloc] [@alloc stack]` is equivalent to
+`[%string.stack]`, and `[%string.alloc] [@alloc heap]` is equivalent to `[%string.global]`
+(we plan to rename this to `[%string.heap]` soon). For example, we can template our
+`recent_logins` function to have the choice of producing the string either on the heap or
+on the stack:
+
+```ocaml
+# let%template recent_logins (success : String_opt.t @ m) (failure : String_opt.t @ m) =
+    {%string.alloc|Recent logins: Success %{success#String_opt}, Failure %{failure#String_opt}|} 
+    [@alloc a] [@exclave_if_stack a]
+  [@@zero_alloc_if_stack a] [@@alloc a @ m = (heap_global, stack_local)]
+val recent_logins : String_opt.t -> String_opt.t -> string = <fun>
+val recent_logins__stack :
+  local_ String_opt.t -> local_ String_opt.t -> local_ string [@@zero_alloc] =
+  <fun>
+```
