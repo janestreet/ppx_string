@@ -189,7 +189,7 @@ rather than
 # let local_ s = "this input is local" in
   Fn.id s
 Line 2, characters 3-10:
-Error: This value escapes its region.
+Error: This value is local but is expected to be global.
 ```
 
 Before `ppx_string` supported `local` inputs, a singleton interpolated
@@ -205,7 +205,7 @@ globalizing --- is still available via the `[%string.global]` extension:
 # let local_ s = "this input is local" in
   {%string.global|%{s}|}
 Line 2, characters 7-8:
-Error: This value escapes its region.
+Error: This value is local but is expected to be global.
 ```
 
 ### Producing stack-allocated strings
