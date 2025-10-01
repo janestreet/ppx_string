@@ -3,6 +3,26 @@ open Ppxlib
 open Ast_builder.Default
 include Ppx_string_intf.Definitions
 
+module Config_modes = struct
+  include Config_modes
+
+  let suffix = function
+    | Local_input_stack_output -> "__stack__stack"
+    | Local_input_heap_output -> "__stack__heap"
+    | Global_input_heap_output -> ""
+  ;;
+
+  let local_input = function
+    | Local_input_stack_output | Local_input_heap_output -> true
+    | Global_input_heap_output -> false
+  ;;
+
+  let conversion_suffix = function
+    | Local_input_stack_output -> "__stack"
+    | Local_input_heap_output | Global_input_heap_output -> ""
+  ;;
+end
+
 module Where = struct
   type t =
     | Imprecise of Location.t
@@ -276,13 +296,12 @@ let extension ~name ~(config : Config.t) =
         (expand ~config ~expr_loc ~string_loc ~string ~delimiter))
 ;;
 
-let config_for_string ~local : Config.t =
-  let suffix = if local then "__local" else "" in
+let config_for_string config_modes : Config.t =
   { fully_qualified_runtime_module =
-      Ldot (Lident "Ppx_string_runtime", "For_string" ^ suffix)
-  ; conversion_function_name = "to_string"
+      Ldot (Lident "Ppx_string_runtime", "For_string" ^ Config_modes.suffix config_modes)
+  ; conversion_function_name = "to_string" ^ Config_modes.conversion_suffix config_modes
   ; preprocess_before_parsing = None
-  ; assert_list_is_stack_allocated = local
+  ; assert_list_is_stack_allocated = Config_modes.local_input config_modes
   }
 ;;
 
@@ -290,9 +309,20 @@ let () =
   Ppxlib.Driver.register_transformation
     "ppx_string"
     ~extensions:
-      [ extension ~name:"ppx_string.string" ~config:(config_for_string ~local:true)
+      [ extension
+          ~name:"ppx_string.string"
+          ~config:(config_for_string Local_input_heap_output)
       ; extension
           ~name:"ppx_string.@string.global"
-          ~config:(config_for_string ~local:false)
+          ~config:(config_for_string Global_input_heap_output)
+      ; extension
+          ~name:"ppx_string.@string.stack"
+          ~config:(config_for_string Local_input_stack_output)
+      ; extension
+          ~name:"ppx_string.@string.alloc"
+          ~config:(config_for_string Global_input_heap_output)
+      ; extension
+          ~name:"ppx_string.@string.alloc__stack"
+          ~config:(config_for_string Local_input_stack_output)
       ]
 ;;
