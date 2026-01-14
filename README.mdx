@@ -247,11 +247,11 @@ on the stack:
 
 ```ocaml
 # let%template recent_logins (success : String_opt.t @ m) (failure : String_opt.t @ m) =
-    {%string.alloc|Recent logins: Success %{success#String_opt}, Failure %{failure#String_opt}|} 
+    {%string.alloc|Recent logins: Success %{success#String_opt}, Failure %{failure#String_opt}|}
     [@alloc a] [@exclave_if_stack a]
   [@@zero_alloc_if_stack a] [@@alloc a @ m = (heap_global, stack_local)]
 val recent_logins : String_opt.t -> String_opt.t -> string = <fun>
 val recent_logins__stack :
-  local_ String_opt.t -> local_ String_opt.t -> local_ string [@@zero_alloc] =
-  <fun>
+  String_opt.t @ local -> String_opt.t @ local -> string @ local
+  [@@zero_alloc] = <fun>
 ```
