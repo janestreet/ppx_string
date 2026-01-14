@@ -137,8 +137,8 @@ let set_locs loc =
   end
 ;;
 
-let parse_error ~loc ~name string =
-  Location.raise_errorf ~loc "invalid %s: %S" name string
+let make_error ~loc ~name string =
+  Location.Error.createf ~loc "invalid %s: %S" name string
 ;;
 
 let parse_expression ~where ~loc ~name string =
@@ -146,14 +146,15 @@ let parse_expression ~where ~loc ~name string =
   lexbuf.lex_abs_pos <- loc.loc_start.pos_cnum;
   lexbuf.lex_curr_p <- loc.loc_start;
   match Parse.expression lexbuf with
-  | exception _ -> parse_error ~loc ~name string
+  | exception _ ->
+    make_error ~loc ~name string |> Location.Error.to_extension |> pexp_extension ~loc
   | expr -> if Where.is_precise where then expr else (set_locs loc)#expression expr
 ;;
 
 let parse_ident ~where ~loc ~name module_path =
   match parse_expression ~where ~loc ~name module_path with
   | { pexp_desc = Pexp_construct (ident, None); _ } -> ident
-  | _ -> parse_error ~loc ~name module_path
+  | _ -> make_error ~loc ~name module_path |> Location.Error.raise
 ;;
 
 let parse_body ~where string =
