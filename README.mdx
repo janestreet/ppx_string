@@ -189,7 +189,8 @@ rather than
 # let local_ s = "this input is local" in
   Fn.id s
 Line 2, characters 3-10:
-Error: This value is local but is expected to be global.
+Error: This value is local
+       but is expected to be global because it is a top-level expression.
 ```
 
 Before `ppx_string` supported `local` inputs, a singleton interpolated
