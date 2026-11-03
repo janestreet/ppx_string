@@ -1,5 +1,3 @@
-open! Base
-
 module Definitions = struct
   [%%template
   [@@@alloc a_out @ m_out = (heap_global, stack_local)]
