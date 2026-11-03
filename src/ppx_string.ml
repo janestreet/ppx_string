@@ -1,4 +1,4 @@
-open Base
+open Ppx_helpers.Base_lite
 open Ppxlib
 open Ast_builder.Default
 include Ppx_string_intf.Definitions
@@ -6,21 +6,9 @@ include Ppx_string_intf.Definitions
 module Config_modes = struct
   include Config_modes
 
-  let suffix = function
-    | Local_input_stack_output -> "__stack__stack"
-    | Local_input_heap_output -> "__stack__heap"
-    | Global_input_heap_output -> ""
-  ;;
-
-  let local_input = function
-    | Local_input_stack_output | Local_input_heap_output -> true
-    | Global_input_heap_output -> false
-  ;;
-
-  let conversion_suffix = function
-    | Local_input_stack_output -> "__stack"
-    | Local_input_heap_output | Global_input_heap_output -> ""
-  ;;
+  let suffix (_ : t) = ""
+  let local_input (_ : t) = false
+  let conversion_suffix (_ : t) = ""
 end
 
 module Where = struct

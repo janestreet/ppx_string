@@ -1,6 +1,14 @@
 (library
+ (foreign_stubs
+  (language c)
+  (names ppx_string_runtime_stubs))
  (name ppx_string_runtime)
  (public_name ppx_string.runtime)
- (libraries base)
+ (libraries)
  (preprocess
-  (pps ppx_template)))
+  (pps ppx_template))
+ (js_of_ocaml
+  (javascript_files runtime.js))
+ (wasm_of_ocaml
+  (javascript_files runtime.js)
+  (wasm_files runtime.wat)))
